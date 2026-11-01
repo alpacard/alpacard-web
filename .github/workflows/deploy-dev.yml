@@ -181,28 +181,34 @@ jobs:
             TITLE="🚀 <b>Alpacard Deployment Succeeded</b>"
             STATUS_BADGE="✅ <b>Active on Kubernetes (Zero-Downtime Rollout)</b>"
             COLOR_EMOJI="✅"
-            MSG="$TITLE
-<b>Environment:</b> <code>$ENV_LABEL ($NAMESPACE)</code>
-<b>Commit:</b> <code>$COMMIT_SHORT</code> (${{ github.sha }})
-<b>Author:</b> ${{ github.actor }}
-<b>URL:</b> <a href=\"$DOMAIN\">$DOMAIN</a>
-<b>Images:</b>
-• <code>ghcr.io/alpacard/alpacard-api:$COMMIT_SHORT</code>
-• <code>ghcr.io/alpacard/alpacard-web:$COMMIT_SHORT</code>
-• <code>ghcr.io/alpacard/alpacard-wallet:$COMMIT_SHORT</code>
-<b>Status:</b> $STATUS_BADGE"
+            MSG=$(cat <<EOF
+          🚀 <b>Alpacard Deployment Succeeded</b>
+          <b>Environment:</b> <code>$ENV_LABEL ($NAMESPACE)</code>
+          <b>Commit:</b> <code>$COMMIT_SHORT</code> (${{ github.sha }})
+          <b>Author:</b> ${{ github.actor }}
+          <b>URL:</b> <a href="$DOMAIN">$DOMAIN</a>
+          <b>Images:</b>
+          • <code>ghcr.io/alpacard/alpacard-api:$COMMIT_SHORT</code>
+          • <code>ghcr.io/alpacard/alpacard-web:$COMMIT_SHORT</code>
+          • <code>ghcr.io/alpacard/alpacard-wallet:$COMMIT_SHORT</code>
+          <b>Status:</b> ✅ <b>Active on Kubernetes (Zero-Downtime Rollout)</b>
+          EOF
+          )
           else
             TITLE="🚨 <b>Alpacard Deployment FAILED & ROLLED BACK</b>"
             STATUS_BADGE="⚠️ <b>Reverted to Previous Healthy Revision</b>"
             REASON="${DEPLOY_ERROR_MSG:-Unknown failure in rollout or build pipeline}"
             COLOR_EMOJI="❌"
-            MSG="$TITLE
-<b>Environment:</b> <code>$ENV_LABEL ($NAMESPACE)</code>
-<b>Commit:</b> <code>$COMMIT_SHORT</code> (${{ github.sha }})
-<b>Author:</b> ${{ github.actor }}
-<b>Failure Reason:</b> <code>$REASON</code>
-<b>Auto-Rollback:</b> 🔄 <code>kubectl rollout undo</code> executed
-<b>Status:</b> $STATUS_BADGE"
+            MSG=$(cat <<EOF
+          🚨 <b>Alpacard Deployment FAILED & ROLLED BACK</b>
+          <b>Environment:</b> <code>$ENV_LABEL ($NAMESPACE)</code>
+          <b>Commit:</b> <code>$COMMIT_SHORT</code> (${{ github.sha }})
+          <b>Author:</b> ${{ github.actor }}
+          <b>Failure Reason:</b> <code>$REASON</code>
+          <b>Auto-Rollback:</b> 🔄 <code>kubectl rollout undo</code> executed
+          <b>Status:</b> ⚠️ <b>Reverted to Previous Healthy Revision</b>
+          EOF
+          )
           fi
 
           if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then

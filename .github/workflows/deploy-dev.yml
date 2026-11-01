@@ -92,7 +92,11 @@ jobs:
     runs-on: alpacard-k8s-runner
     env:
       NAMESPACE: alpacard-dev
+      ENV_LABEL: Development
       DOMAIN: https://dev.alpacard.app
+      IMAGE_TAG: ${{ github.sha }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -100,44 +104,129 @@ jobs:
       - name: Set up Kubectl
         uses: azure/setup-kubectl@v4
 
-      - name: Update Deployment Images
+      - name: Execute Zero-Downtime Deployment with Auto-Rollback
+        id: deploy_rollout
         run: |
-          echo "Updating deployment container images in $NAMESPACE..."
-          kubectl set image deployment/alpacard-api api=ghcr.io/alpacard/alpacard-api:${{ github.sha }} -n $NAMESPACE
-          kubectl set image deployment/alpacard-worker worker=ghcr.io/alpacard/alpacard-api:${{ github.sha }} -n $NAMESPACE
-          kubectl set image deployment/alpacard-web web=ghcr.io/alpacard/alpacard-web:${{ github.sha }} -n $NAMESPACE
-          kubectl set image deployment/alpacard-wallet wallet=ghcr.io/alpacard/alpacard-wallet:${{ github.sha }} -n $NAMESPACE
+          set -euo pipefail
 
-      - name: Wait for Rollout Completion
-        run: |
-          echo "Awaiting rollout status for deployments in $NAMESPACE..."
-          kubectl rollout status deployment/alpacard-api -n $NAMESPACE --timeout=120s
-          kubectl rollout status deployment/alpacard-worker -n $NAMESPACE --timeout=120s
-          kubectl rollout status deployment/alpacard-web -n $NAMESPACE --timeout=120s
-          kubectl rollout status deployment/alpacard-wallet -n $NAMESPACE --timeout=120s
+          echo "🚀 [1/3] Triggering zero-downtime rolling update for $ENV_LABEL ($NAMESPACE)..."
+          kubectl set image deployment/alpacard-api api=ghcr.io/alpacard/alpacard-api:${IMAGE_TAG} -n $NAMESPACE
+          kubectl set image deployment/alpacard-worker worker=ghcr.io/alpacard/alpacard-api:${IMAGE_TAG} -n $NAMESPACE
+          kubectl set image deployment/alpacard-web web=ghcr.io/alpacard/alpacard-web:${IMAGE_TAG} -n $NAMESPACE
+          kubectl set image deployment/alpacard-wallet wallet=ghcr.io/alpacard/alpacard-wallet:${IMAGE_TAG} -n $NAMESPACE
 
-      - name: Verify Environment Health (Smoke Test)
-        run: |
-          echo "Verifying health endpoint at $DOMAIN/api/health..."
-          STATUS=$(curl -s -k -o /dev/null -w "%{http_code}" "$DOMAIN/api/health" || echo "000")
-          if [ "$STATUS" = "200" ]; then
-            echo "✅ Health check PASSED (HTTP 200) for $DOMAIN/api/health"
-          else
-            echo "⚠️ Health check returned HTTP $STATUS. Inspecting response..."
-            curl -s -k "$DOMAIN/api/health" || true
+          ROLLBACK_TRIGGERED=false
+          FAIL_REASON=""
+
+          echo "⏳ [2/3] Monitoring rollout completion across all services..."
+          for DEP in alpacard-api alpacard-worker alpacard-web alpacard-wallet; do
+            echo "Checking rollout status for deployment/$DEP..."
+            if ! kubectl rollout status deployment/$DEP -n $NAMESPACE --timeout=150s; then
+              ROLLBACK_TRIGGERED=true
+              FAIL_REASON="Rollout timeout or failure detected for deployment/$DEP"
+              break
+            fi
+          done
+
+          if [ "$ROLLBACK_TRIGGERED" = "false" ]; then
+            echo "🔍 [3/3] Executing smoke test verification on $DOMAIN/api/health..."
+            SMOKE_SUCCESS=false
+            for attempt in $(seq 1 12); do
+              HTTP_CODE=$(curl -s -k -o /dev/null -w "%{http_code}" "$DOMAIN/api/health" || echo "000")
+              if [ "$HTTP_CODE" = "200" ]; then
+                echo "✅ Health check PASSED (HTTP 200) on attempt $attempt"
+                SMOKE_SUCCESS=true
+                break
+              else
+                echo "⚠️ Attempt $attempt/12: received HTTP $HTTP_CODE. Retrying in 4 seconds..."
+                sleep 4
+              fi
+            done
+
+            if [ "$SMOKE_SUCCESS" = "false" ]; then
+              ROLLBACK_TRIGGERED=true
+              FAIL_REASON="Health check smoke test failed at $DOMAIN/api/health after 12 verification attempts"
+            fi
+          fi
+
+          if [ "$ROLLBACK_TRIGGERED" = "true" ]; then
+            echo "❌ CRITICAL: Deployment verification failed ($FAIL_REASON)!"
+            echo "🔄 Initiating AUTOMATIC ROLLBACK across all deployments in $NAMESPACE..."
+            
+            kubectl rollout undo deployment/alpacard-api -n $NAMESPACE || true
+            kubectl rollout undo deployment/alpacard-worker -n $NAMESPACE || true
+            kubectl rollout undo deployment/alpacard-web -n $NAMESPACE || true
+            kubectl rollout undo deployment/alpacard-wallet -n $NAMESPACE || true
+
+            echo "⏳ Awaiting stabilization of previous revision..."
+            kubectl rollout status deployment/alpacard-api -n $NAMESPACE --timeout=120s || true
+            kubectl rollout status deployment/alpacard-worker -n $NAMESPACE --timeout=120s || true
+            kubectl rollout status deployment/alpacard-web -n $NAMESPACE --timeout=120s || true
+            kubectl rollout status deployment/alpacard-wallet -n $NAMESPACE --timeout=120s || true
+
+            echo "DEPLOY_STATUS=rollback" >> $GITHUB_ENV
+            echo "DEPLOY_ERROR_MSG=$FAIL_REASON" >> $GITHUB_ENV
             exit 1
           fi
 
-      - name: Deployment Health Summary
+          echo "DEPLOY_STATUS=success" >> $GITHUB_ENV
+          echo "🎉 Rolling update successfully completed and verified!"
+
+      - name: Dispatch Telegram Notification & Step Summary
         if: always()
         run: |
-          echo "### 🚀 Dev Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Namespace**: \`$NAMESPACE\`" >> $GITHUB_STEP_SUMMARY
+          COMMIT_SHORT="${IMAGE_TAG:0:8}"
+          
+          if [ "${DEPLOY_STATUS:-failure}" = "success" ]; then
+            TITLE="🚀 <b>Alpacard Deployment Succeeded</b>"
+            STATUS_BADGE="✅ <b>Active on Kubernetes (Zero-Downtime Rollout)</b>"
+            COLOR_EMOJI="✅"
+            MSG="$TITLE
+<b>Environment:</b> <code>$ENV_LABEL ($NAMESPACE)</code>
+<b>Commit:</b> <code>$COMMIT_SHORT</code> (${{ github.sha }})
+<b>Author:</b> ${{ github.actor }}
+<b>URL:</b> <a href=\"$DOMAIN\">$DOMAIN</a>
+<b>Images:</b>
+• <code>ghcr.io/alpacard/alpacard-api:$COMMIT_SHORT</code>
+• <code>ghcr.io/alpacard/alpacard-web:$COMMIT_SHORT</code>
+• <code>ghcr.io/alpacard/alpacard-wallet:$COMMIT_SHORT</code>
+<b>Status:</b> $STATUS_BADGE"
+          else
+            TITLE="🚨 <b>Alpacard Deployment FAILED & ROLLED BACK</b>"
+            STATUS_BADGE="⚠️ <b>Reverted to Previous Healthy Revision</b>"
+            REASON="${DEPLOY_ERROR_MSG:-Unknown failure in rollout or build pipeline}"
+            COLOR_EMOJI="❌"
+            MSG="$TITLE
+<b>Environment:</b> <code>$ENV_LABEL ($NAMESPACE)</code>
+<b>Commit:</b> <code>$COMMIT_SHORT</code> (${{ github.sha }})
+<b>Author:</b> ${{ github.actor }}
+<b>Failure Reason:</b> <code>$REASON</code>
+<b>Auto-Rollback:</b> 🔄 <code>kubectl rollout undo</code> executed
+<b>Status:</b> $STATUS_BADGE"
+          fi
+
+          if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+            echo "Sending Telegram dispatch to chat ID $TELEGRAM_CHAT_ID..."
+            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${TELEGRAM_CHAT_ID}" \
+              -d "parse_mode=HTML" \
+              --data-urlencode "text=$MSG" > /dev/null || echo "Failed to dispatch Telegram message"
+          fi
+
+          echo "### $COLOR_EMOJI $ENV_LABEL Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: \`$ENV_LABEL\` (\`$NAMESPACE\`)" >> $GITHUB_STEP_SUMMARY
           echo "- **URL**: [$DOMAIN]($DOMAIN)" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Images**:" >> $GITHUB_STEP_SUMMARY
-          echo "  - \`ghcr.io/alpacard/alpacard-api:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "  - \`ghcr.io/alpacard/alpacard-web:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "  - \`ghcr.io/alpacard/alpacard-wallet:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Runner**: ARC Runner Pod (\`alpacard-k8s-runner\`)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status**: ✅ Active on Kubernetes" >> $GITHUB_STEP_SUMMARY
+          echo "- **Author**: \`${{ github.actor }}\`" >> $GITHUB_STEP_SUMMARY
+          if [ "${DEPLOY_STATUS:-failure}" = "success" ]; then
+            echo "- **Status**: ✅ Zero-Downtime Rollout Verified & Live" >> $GITHUB_STEP_SUMMARY
+            echo "- **Images**:" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`ghcr.io/alpacard/alpacard-api:${IMAGE_TAG}\`" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`ghcr.io/alpacard/alpacard-web:${IMAGE_TAG}\`" >> $GITHUB_STEP_SUMMARY
+            echo "  - \`ghcr.io/alpacard/alpacard-wallet:${IMAGE_TAG}\`" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Status**: ⚠️ **FAILED - Automatic Rollback Triggered**" >> $GITHUB_STEP_SUMMARY
+            echo "- **Reason**: \`${DEPLOY_ERROR_MSG:-Pipeline failure}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- **Action**: Reverted all deployments in \`$NAMESPACE\` to prior healthy revision." >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "- **Runner**: ARC Pod (\`alpacard-k8s-runner\`)" >> $GITHUB_STEP_SUMMARY

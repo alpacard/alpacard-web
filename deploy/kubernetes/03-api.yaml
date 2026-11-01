@@ -32,6 +32,12 @@ metadata:
     app: alpacard-api
 spec:
   replicas: 1
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: alpacard-api
@@ -82,6 +88,12 @@ metadata:
     app: alpacard-worker
 spec:
   replicas: 1
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: alpacard-worker

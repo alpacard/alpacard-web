@@ -19,9 +19,11 @@ spec:
         prometheus.io/port: "80"
         prometheus.io/path: "/metrics"
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: web
-        image: localhost/alpacard-web:latest
+        image: ghcr.io/alpacard/alpacard-web:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80
@@ -80,9 +82,11 @@ spec:
         prometheus.io/port: "80"
         prometheus.io/path: "/metrics"
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: wallet
-        image: localhost/alpacard-wallet:latest
+        image: ghcr.io/alpacard/alpacard-wallet:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80

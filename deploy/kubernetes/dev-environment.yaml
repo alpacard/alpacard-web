@@ -189,9 +189,11 @@ spec:
       labels:
         app: alpacard-api
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: api
-        image: localhost/alpacard-api:latest
+        image: ghcr.io/alpacard/alpacard-api:latest
         imagePullPolicy: IfNotPresent
         command: ["/app/server"]
         ports:
@@ -233,9 +235,11 @@ spec:
       labels:
         app: alpacard-worker
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: worker
-        image: localhost/alpacard-api:latest
+        image: ghcr.io/alpacard/alpacard-api:latest
         imagePullPolicy: IfNotPresent
         command: ["/app/worker"]
         ports:
@@ -290,9 +294,11 @@ spec:
       labels:
         app: alpacard-web
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: web
-        image: localhost/alpacard-web:latest
+        image: ghcr.io/alpacard/alpacard-web:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80
@@ -341,9 +347,11 @@ spec:
       labels:
         app: alpacard-wallet
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: wallet
-        image: localhost/alpacard-wallet:latest
+        image: ghcr.io/alpacard/alpacard-wallet:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80

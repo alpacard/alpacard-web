@@ -44,9 +44,11 @@ spec:
         prometheus.io/port: "4000"
         prometheus.io/path: "/metrics"
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: api
-        image: localhost/alpacard-api:latest
+        image: ghcr.io/alpacard/alpacard-api:latest
         imagePullPolicy: IfNotPresent
         command: ["/app/server"]
         ports:
@@ -92,9 +94,11 @@ spec:
         prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: worker
-        image: localhost/alpacard-api:latest
+        image: ghcr.io/alpacard/alpacard-api:latest
         imagePullPolicy: IfNotPresent
         command: ["/app/worker"]
         ports:

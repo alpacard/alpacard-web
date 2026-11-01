@@ -4,25 +4,140 @@ on:
   push:
     branches:
       - dev
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
-  deploy-to-dev:
-    name: Build & Deploy to Dev (alpacard-dev)
-    runs-on: [self-hosted, alpacard-k8s]
+  build:
+    name: Build & Push Container Images (GHCR)
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Execute Automated Dev Deployment
-        run: |
-          chmod +x ./scripts/deploy-env.sh
-          ./scripts/deploy-env.sh dev
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
 
-      - name: Dev Deployment Health Summary
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Build Frontend Bundles
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @alpacard/shared build
+          pnpm --filter @alpacard/web build
+          pnpm --filter @alpacard/wallet build
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'apps/api/go.mod'
+          cache-dependency-path: apps/api/go.sum
+
+      - name: Compile Go Binaries Statically
+        run: |
+          cd apps/api
+          CGO_ENABLED=0 GOOS=linux go build -o bin/server ./cmd/server
+          CGO_ENABLED=0 GOOS=linux go build -o bin/worker ./cmd/worker
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (ghcr.io)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push API & Worker Image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/api
+          file: apps/api/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/alpacard/alpacard-api:${{ github.sha }}
+            ghcr.io/alpacard/alpacard-api:latest
+
+      - name: Build and Push Web Frontend Image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/web
+          file: apps/web/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/alpacard/alpacard-web:${{ github.sha }}
+            ghcr.io/alpacard/alpacard-web:latest
+
+      - name: Build and Push Wallet Frontend Image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/wallet
+          file: apps/wallet/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/alpacard/alpacard-wallet:${{ github.sha }}
+            ghcr.io/alpacard/alpacard-wallet:latest
+
+  deploy:
+    name: Deploy to Dev (alpacard-dev)
+    needs: build
+    runs-on: alpacard-k8s-runner
+    env:
+      NAMESPACE: alpacard-dev
+      DOMAIN: https://dev.alpacard.app
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Update Deployment Images
+        run: |
+          echo "Updating deployment container images in $NAMESPACE..."
+          kubectl set image deployment/alpacard-api api=ghcr.io/alpacard/alpacard-api:${{ github.sha }} -n $NAMESPACE
+          kubectl set image deployment/alpacard-worker worker=ghcr.io/alpacard/alpacard-api:${{ github.sha }} -n $NAMESPACE
+          kubectl set image deployment/alpacard-web web=ghcr.io/alpacard/alpacard-web:${{ github.sha }} -n $NAMESPACE
+          kubectl set image deployment/alpacard-wallet wallet=ghcr.io/alpacard/alpacard-wallet:${{ github.sha }} -n $NAMESPACE
+
+      - name: Wait for Rollout Completion
+        run: |
+          echo "Awaiting rollout status for deployments in $NAMESPACE..."
+          kubectl rollout status deployment/alpacard-api -n $NAMESPACE --timeout=120s
+          kubectl rollout status deployment/alpacard-worker -n $NAMESPACE --timeout=120s
+          kubectl rollout status deployment/alpacard-web -n $NAMESPACE --timeout=120s
+          kubectl rollout status deployment/alpacard-wallet -n $NAMESPACE --timeout=120s
+
+      - name: Verify Environment Health (Smoke Test)
+        run: |
+          echo "Verifying health endpoint at $DOMAIN/api/health..."
+          STATUS=$(curl -s -k -o /dev/null -w "%{http_code}" "$DOMAIN/api/health" || echo "000")
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ Health check PASSED (HTTP 200) for $DOMAIN/api/health"
+          else
+            echo "⚠️ Health check returned HTTP $STATUS. Inspecting response..."
+            curl -s -k "$DOMAIN/api/health" || true
+            exit 1
+          fi
+
+      - name: Deployment Health Summary
         if: always()
         run: |
           echo "### 🚀 Dev Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Namespace**: \`alpacard-dev\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **URL**: [https://dev.alpacard.app](https://dev.alpacard.app)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Namespace**: \`$NAMESPACE\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: [$DOMAIN]($DOMAIN)" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Images**:" >> $GITHUB_STEP_SUMMARY
+          echo "  - \`ghcr.io/alpacard/alpacard-api:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "  - \`ghcr.io/alpacard/alpacard-web:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "  - \`ghcr.io/alpacard/alpacard-wallet:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Runner**: ARC Runner Pod (\`alpacard-k8s-runner\`)" >> $GITHUB_STEP_SUMMARY
           echo "- **Status**: ✅ Active on Kubernetes" >> $GITHUB_STEP_SUMMARY

@@ -70,11 +70,17 @@ kind: Service
 metadata:
   name: alpacard-postgres-service
   namespace: alpacard-dev
+  annotations:
+    metallb.io/loadBalancerIPs: "192.168.0.54"
 spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Cluster
   ports:
   - port: 5432
     targetPort: 5432
+    nodePort: 30542
     name: postgres
+    protocol: TCP
   selector:
     app: alpacard-postgres
 ---
@@ -181,6 +187,12 @@ metadata:
     app: alpacard-api
 spec:
   replicas: 1
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: alpacard-api
@@ -189,9 +201,11 @@ spec:
       labels:
         app: alpacard-api
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: api
-        image: localhost/alpacard-api:latest
+        image: ghcr.io/alpacard/alpacard-api:latest
         imagePullPolicy: IfNotPresent
         command: ["/app/server"]
         ports:
@@ -225,6 +239,12 @@ metadata:
     app: alpacard-worker
 spec:
   replicas: 1
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: alpacard-worker
@@ -233,9 +253,11 @@ spec:
       labels:
         app: alpacard-worker
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: worker
-        image: localhost/alpacard-api:latest
+        image: ghcr.io/alpacard/alpacard-api:latest
         imagePullPolicy: IfNotPresent
         command: ["/app/worker"]
         ports:
@@ -282,6 +304,12 @@ metadata:
     app: alpacard-web
 spec:
   replicas: 1
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: alpacard-web
@@ -290,9 +318,11 @@ spec:
       labels:
         app: alpacard-web
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: web
-        image: localhost/alpacard-web:latest
+        image: ghcr.io/alpacard/alpacard-web:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80
@@ -333,6 +363,12 @@ metadata:
     app: alpacard-wallet
 spec:
   replicas: 1
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: alpacard-wallet
@@ -341,9 +377,11 @@ spec:
       labels:
         app: alpacard-wallet
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: wallet
-        image: localhost/alpacard-wallet:latest
+        image: ghcr.io/alpacard/alpacard-wallet:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80

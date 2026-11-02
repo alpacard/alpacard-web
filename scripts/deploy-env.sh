@@ -2,9 +2,10 @@
 set -euo pipefail
 
 # Alpacard Multi-Environment Deployment Script
-# Usage: ./scripts/deploy-env.sh [dev|prod]
+# Usage: ./scripts/deploy-env.sh [dev|prod] [IMAGE_TAG]
 
 TARGET_ENV="${1:-dev}"
+IMAGE_TAG="${2:-latest}"
 
 if [ "$TARGET_ENV" = "prod" ] || [ "$TARGET_ENV" = "production" ] || [ "$TARGET_ENV" = "main" ]; then
   NAMESPACE="alpacard"
@@ -39,26 +40,22 @@ echo "🐹 [2/6] Compiling Go API & Worker binaries statically..."
 
 # 3. Build Container Images with Podman
 echo "🐳 [3/6] Building container images..."
-podman build -t localhost/alpacard-web:latest apps/web
-podman build -t localhost/alpacard-wallet:latest apps/wallet
-podman build -t localhost/alpacard-api:latest apps/api
+podman build -t "ghcr.io/alpacard/alpacard-web:${IMAGE_TAG}" apps/web
+podman build -t "ghcr.io/alpacard/alpacard-wallet:${IMAGE_TAG}" apps/wallet
+podman build -t "ghcr.io/alpacard/alpacard-api:${IMAGE_TAG}" apps/api
 
 # 4. Import Container Images into Kubernetes containerd
 echo "📥 [4/6] Importing container images into Kubernetes containerd runtime..."
-podman save localhost/alpacard-web:latest | sudo k3s ctr --namespace k8s.io images import -
-podman save localhost/alpacard-wallet:latest | sudo k3s ctr --namespace k8s.io images import -
-podman save localhost/alpacard-api:latest | sudo k3s ctr --namespace k8s.io images import -
+podman save "ghcr.io/alpacard/alpacard-web:${IMAGE_TAG}" | sudo k3s ctr --namespace k8s.io images import -
+podman save "ghcr.io/alpacard/alpacard-wallet:${IMAGE_TAG}" | sudo k3s ctr --namespace k8s.io images import -
+podman save "ghcr.io/alpacard/alpacard-api:${IMAGE_TAG}" | sudo k3s ctr --namespace k8s.io images import -
 
 # 5. Rotate Running Pods in the targeted Namespace
-echo "🔄 [5/6] Applying manifests and triggering rolling restart for namespace: $NAMESPACE..."
-if [ "$NAMESPACE" = "alpacard" ]; then
-  kubectl apply -f deploy/kubernetes/05-ingress.yaml -n "$NAMESPACE" || true
-  kubectl patch configmap alpacard-api-config -n "$NAMESPACE" --type merge -p '{"data":{"APP_URL":"https://alpacard.app","WALLET_URL":"https://wallet.alpacard.app","SMTP_FROM":"Alpacard <no-reply@alpacard.app>","CORS_ORIGINS":"https://alpacard.app,https://www.alpacard.app,https://wallet.alpacard.app,https://merchant.alpacard.app,https://demo.alpacard.app,http://localhost:5173,http://localhost:5174"}}' || true
-fi
-kubectl delete pod -l app=alpacard-web -n "$NAMESPACE" || true
-kubectl delete pod -l app=alpacard-wallet -n "$NAMESPACE" || true
-kubectl delete pod -l app=alpacard-api -n "$NAMESPACE" || true
-kubectl delete pod -l app=alpacard-worker -n "$NAMESPACE" || true
+echo "🔄 [5/6] Applying image updates and triggering rollout for namespace: $NAMESPACE..."
+kubectl set image deployment/alpacard-api api="ghcr.io/alpacard/alpacard-api:${IMAGE_TAG}" -n "$NAMESPACE"
+kubectl set image deployment/alpacard-worker worker="ghcr.io/alpacard/alpacard-api:${IMAGE_TAG}" -n "$NAMESPACE"
+kubectl set image deployment/alpacard-web web="ghcr.io/alpacard/alpacard-web:${IMAGE_TAG}" -n "$NAMESPACE"
+kubectl set image deployment/alpacard-wallet wallet="ghcr.io/alpacard/alpacard-wallet:${IMAGE_TAG}" -n "$NAMESPACE"
 
 echo "⏳ Awaiting rollout completion..."
 kubectl rollout status deployment/alpacard-web -n "$NAMESPACE" --timeout=120s

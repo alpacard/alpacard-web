@@ -60,11 +60,22 @@ metadata:
   name: {{ include "alpacard.fullname" . }}-postgres-service
   labels:
     {{- include "alpacard.labels" . | nindent 4 }}
+  {{- with .Values.postgres.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
+  type: {{ .Values.postgres.service.type | default "ClusterIP" }}
+  {{- if eq (.Values.postgres.service.type | default "ClusterIP") "LoadBalancer" }}
+  externalTrafficPolicy: Cluster
+  {{- end }}
   ports:
-  - port: 5432
+  - port: {{ .Values.postgres.service.port | default 5432 }}
     targetPort: 5432
     name: postgres
+    {{- if and (or (eq .Values.postgres.service.type "NodePort") (eq .Values.postgres.service.type "LoadBalancer")) .Values.postgres.service.nodePort }}
+    nodePort: {{ .Values.postgres.service.nodePort }}
+    {{- end }}
   selector:
     app: {{ include "alpacard.fullname" . }}-postgres
 {{- end }}

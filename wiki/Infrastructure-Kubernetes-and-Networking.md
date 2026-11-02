@@ -95,3 +95,16 @@ To allow QA testers, developers, and stakeholders to test the non-production env
    - Authorized team members connect through the enterprise Tailscale VPN mesh.
    - When connected, traffic to the internal staging subnet (`192.168.0.0/24`) routes securely through the private gateway.
    - Opening `https://dev.alpacard.app` connects directly to the internal Kubernetes ingress load balancer (`192.168.0.50`), presenting the isolated staging environment with valid Let's Encrypt TLS.
+3. **Database Reachability & QA Automation**:
+   - The PostgreSQL databases are exposed through dedicated MetalLB Layer 2 Virtual IPs and NodePorts on the internal subnet (`192.168.0.0/24`), reachable by developers and QA automation tools directly when connected to Tailscale VPN or on the local network:
+     - **Development DB (`alpacard-dev`)**:
+       - Host: `dev-db.alpacard.app` (or direct IP `192.168.0.54`)
+       - NodePort Fallback: `192.168.0.103:30542`
+       - Port: `5432` | DB: `alpacard_dev` | User: `alpacard_dev` | Password: `alpacard_dev_secret_2026`
+     - **Production DB (`alpacard`)**:
+       - Host: `prod-db.alpacard.app` (or direct IP `192.168.0.55`)
+       - NodePort Fallback: `192.168.0.103:30541`
+       - Port: `5432` | DB: `alpacard` | User: `alpacard`
+   - **QA Automated Testing Suite**:
+     - `pnpm test:qa:all` (executes Newman API test journeys followed by relational database integrity checks)
+     - `pnpm test:qa:db` (direct relational schema, referential integrity, and anti-replay audit verification)

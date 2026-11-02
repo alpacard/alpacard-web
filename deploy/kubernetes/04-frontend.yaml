@@ -7,6 +7,12 @@ metadata:
     app: alpacard-web
 spec:
   replicas: 1
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: alpacard-web
@@ -19,9 +25,11 @@ spec:
         prometheus.io/port: "80"
         prometheus.io/path: "/metrics"
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: web
-        image: localhost/alpacard-web:latest
+        image: ghcr.io/alpacard/alpacard-web:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80
@@ -68,6 +76,12 @@ metadata:
     app: alpacard-wallet
 spec:
   replicas: 1
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: alpacard-wallet
@@ -80,9 +94,11 @@ spec:
         prometheus.io/port: "80"
         prometheus.io/path: "/metrics"
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: wallet
-        image: localhost/alpacard-wallet:latest
+        image: ghcr.io/alpacard/alpacard-wallet:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80

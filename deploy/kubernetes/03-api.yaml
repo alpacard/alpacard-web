@@ -32,6 +32,12 @@ metadata:
     app: alpacard-api
 spec:
   replicas: 1
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: alpacard-api
@@ -44,9 +50,11 @@ spec:
         prometheus.io/port: "4000"
         prometheus.io/path: "/metrics"
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: api
-        image: localhost/alpacard-api:latest
+        image: ghcr.io/alpacard/alpacard-api:latest
         imagePullPolicy: IfNotPresent
         command: ["/app/server"]
         ports:
@@ -80,6 +88,12 @@ metadata:
     app: alpacard-worker
 spec:
   replicas: 1
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: alpacard-worker
@@ -92,9 +106,11 @@ spec:
         prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: worker
-        image: localhost/alpacard-api:latest
+        image: ghcr.io/alpacard/alpacard-api:latest
         imagePullPolicy: IfNotPresent
         command: ["/app/worker"]
         ports:

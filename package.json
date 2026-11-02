@@ -6,7 +6,10 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "lint": "turbo run lint"
+    "lint": "turbo run lint",
+    "test:qa:api": "npx --yes newman run alpacard-postman-collection.json --env-var \"baseUrl=https://dev.alpacard.app\" --reporters cli",
+    "test:qa:db": "./scripts/qa/test-db.sh",
+    "test:qa:all": "./scripts/qa/run-e2e-suite.sh"
   },
   "devDependencies": {
     "turbo": "^2.3.0"

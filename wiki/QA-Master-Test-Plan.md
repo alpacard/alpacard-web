@@ -46,6 +46,37 @@ The project testing approach is organized across three complementary execution l
 | **Edge Case Generation & QA Assistance** | Cursor, Claude, Antigravity | Rapid authoring of complex test matrices, edge-case analysis, and automation debugging. |
 | **Continuous Integration** | GitHub Actions (`ci-main.yml` / `ci-integration.yml`) | Automated build validation and regression test pipeline execution. |
 
+### 4.1 Database Reachability from VPN & Local Network
+
+The PostgreSQL database instances are accessible directly over the **Tailscale VPN** mesh and the **local network** (`192.168.0.0/24`) for QA automated testing, data integrity verification, and database clients:
+
+| Environment | Hostname (DNS) | Direct IP (LAN/VPN) | NodePort Fallback | Port | Database | Username | Password |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Development (`alpacard-dev`)** | `dev-db.alpacard.app` | `192.168.0.54` | `192.168.0.103:30542` | `5432` | `alpacard_dev` | `alpacard_dev` | `alpacard_dev_secret_2026` |
+| **Production (`alpacard`)** | `prod-db.alpacard.app` | `192.168.0.55` | `192.168.0.103:30541` | `5432` | `alpacard` | `alpacard` | `alpacard_pg_prod_secret_2026` |
+
+#### Connection String (Standard URI)
+- **Development (Primary QA Target)**:  
+  `postgres://alpacard_dev:alpacard_dev_secret_2026@dev-db.alpacard.app:5432/alpacard_dev?sslmode=disable`
+- **NodePort Alternative**:  
+  `postgres://alpacard_dev:alpacard_dev_secret_2026@192.168.0.103:30542/alpacard_dev?sslmode=disable`
+
+### 4.2 Automated QA Testing Commands
+The QA automation team can execute the test suites directly via CLI or integrated test runners:
+
+```bash
+# 1. Run Complete E2E Suite (Newman API Automation + Direct Database Integrity Verification)
+pnpm test:qa:all
+# or: ./scripts/qa/run-e2e-suite.sh
+
+# 2. Run Direct Relational Database Integrity & Constraint Verification
+pnpm test:qa:db
+# or: ./scripts/qa/test-db.sh
+
+# 3. Run Newman API Contract & Workflow Regression
+pnpm test:qa:api
+```
+
 ---
 
 ## 5. Acceptance & Suspension Criteria

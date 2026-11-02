@@ -70,11 +70,17 @@ kind: Service
 metadata:
   name: alpacard-postgres-service
   namespace: alpacard-dev
+  annotations:
+    metallb.io/loadBalancerIPs: "192.168.0.54"
 spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Cluster
   ports:
   - port: 5432
     targetPort: 5432
+    nodePort: 30542
     name: postgres
+    protocol: TCP
   selector:
     app: alpacard-postgres
 ---

@@ -23,6 +23,12 @@ postgres:
     database: alpacard
     username: alpacard
     password: alpacard_pg_cluster_secret_2026
+  service:
+    type: ClusterIP
+    port: 5432
+    nodePort: 30541
+    loadBalancerIP: ""
+    annotations: {}
   resources:
     requests:
       cpu: 100m

@@ -22,6 +22,10 @@ apps/api/bin/
 # Testing & Coverage
 coverage/
 *.lcov
+playwright-report/
+test-results/
+**/playwright-report/
+**/test-results/
 
 # System & IDE files
 .DS_Store
